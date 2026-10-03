@@ -45,9 +45,8 @@ final class LoginViewModel: ObservableObject {
                         if let tz = me.timeZone { TokenManager.saveUserTimeZone(tz) }
                     }
 
-                    let deviceTimeZone = TimeZone.current.identifier
-                    if TokenManager.getLastSyncedTimeZone() != deviceTimeZone {
-                        await AppRepository.updateMyTimeZone(timeZone: deviceTimeZone)
+                    if TokenManager.getLastSyncedTimeZone() != appTimeZoneIdentifier {
+                        await AppRepository.updateMyTimeZone(timeZone: appTimeZoneIdentifier)
                             .onSuccess { response in
                                 TokenManager.saveUserTimeZone(response.timeZone)
                                 TokenManager.saveLastSyncedTimeZone(response.timeZone)
@@ -142,6 +141,12 @@ final class SignupViewModel: ObservableObject {
                         if let fid = me.familyAccountId { TokenManager.saveFamilyAccountId(fid) }
                         if let tz = me.timeZone { TokenManager.saveUserTimeZone(tz) }
                     }
+                    await AppRepository.updateMyTimeZone(timeZone: appTimeZoneIdentifier)
+                        .onSuccess { response in
+                            TokenManager.saveUserTimeZone(response.timeZone)
+                            TokenManager.saveLastSyncedTimeZone(response.timeZone)
+                        }
+                        .onFailure { LogManager.logError("Time zone sync failed: \($0.message)") }
                     state = .success
                 },
                 onFailure: { state = .error($0.message.isEmpty ? "Signup failed. Please try again." : $0.message) }

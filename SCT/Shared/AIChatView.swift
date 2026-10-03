@@ -583,7 +583,11 @@ private struct EldaHistorySheet: View {
 
     private func conversationDate(_ raw: String?) -> String {
         guard let raw, let date = parseChatDate(raw) else { return "Date unavailable" }
-        return date.formatted(date: .abbreviated, time: .shortened)
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.timeZone = userTimeZone()
+        formatter.dateFormat = "MMM d, yyyy · h:mm a"
+        return formatter.string(from: date)
     }
 }
 

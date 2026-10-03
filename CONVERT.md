@@ -377,6 +377,8 @@ rather than transliterate.
   necessity; same resulting text appended to the chat input.
 - **Location.** Coarse location → `kCLLocationAccuracyReduced`, same
   Toronto (43.6532, −79.3832) fallback, same 30-minute refresh loop.
+- **Time zone.** All display formatting, date grouping, recurrence requests,
+  and backend profile synchronization use `America/Toronto` (EST/EDT).
 - **Debug log email.** Intent chooser → `MFMailComposeViewController`, with a
   message pointing at the on-disk log path when no mail account is configured.
 - **Navigation.** Kept as a single route string on purpose. There is no system

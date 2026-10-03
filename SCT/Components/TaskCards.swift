@@ -15,6 +15,8 @@ private struct BaseTaskCard: View {
     let isAssignedToMe: Bool
     /// Schedule cards show the time line; to-do cards fall back to location.
     let showTimeLine: Bool
+    /// Senior schedule cards show status and high-priority metadata.
+    let showStatusMetadata: Bool
     let titleWeight: Font.Weight
     /// Android's senior cards call onComplete when the empty box is tapped;
     /// the family cards only flip the local checkbox.
@@ -49,6 +51,16 @@ private struct BaseTaskCard: View {
                     Text(task.displayName)
                         .font(appFont(15, titleWeight))
                         .foregroundStyle(TextDark)
+                    if showStatusMetadata {
+                        Text(task.statusText)
+                            .font(appFont(12))
+                            .foregroundStyle(TextGray)
+                        if (task.priorityLevel ?? 0) >= 4 {
+                            Text("High priority")
+                                .font(appFont(12, .bold))
+                                .foregroundStyle(Color(hex: 0xC62828))
+                        }
+                    }
                     if showTimeLine {
                         if let start = task.startDatetime, !start.isEmpty {
                             Text(formatTimeOnly(start)).font(appFont(13)).foregroundStyle(TextGray)
@@ -133,7 +145,8 @@ struct ScheduleTaskCard: View {
 
     var body: some View {
         BaseTaskCard(task: task, offer: offer, isAssignedToMe: isAssignedToMe,
-                     showTimeLine: true, titleWeight: .bold, completeOnCheck: true,
+                     showTimeLine: true, showStatusMetadata: true,
+                     titleWeight: .bold, completeOnCheck: true,
                      onEdit: onEdit, onComplete: onComplete,
                      onAccept: onAccept, onDecline: onDecline)
     }
@@ -150,7 +163,8 @@ struct TodoTaskCard: View {
 
     var body: some View {
         BaseTaskCard(task: task, offer: offer, isAssignedToMe: isAssignedToMe,
-                     showTimeLine: false, titleWeight: .medium, completeOnCheck: true,
+                     showTimeLine: false, showStatusMetadata: false,
+                     titleWeight: .medium, completeOnCheck: true,
                      onEdit: onEdit, onComplete: onComplete,
                      onAccept: onAccept, onDecline: onDecline)
     }
@@ -169,7 +183,8 @@ struct FamilyScheduleTaskCard: View {
 
     var body: some View {
         BaseTaskCard(task: task, offer: offer, isAssignedToMe: isAssignedToMe,
-                     showTimeLine: true, titleWeight: .bold, completeOnCheck: false,
+                     showTimeLine: true, showStatusMetadata: false,
+                     titleWeight: .bold, completeOnCheck: false,
                      onEdit: onEdit, onComplete: onComplete,
                      onAccept: onAccept, onDecline: onDecline)
     }
@@ -186,7 +201,8 @@ struct FamilyTodoTaskCard: View {
 
     var body: some View {
         BaseTaskCard(task: task, offer: offer, isAssignedToMe: isAssignedToMe,
-                     showTimeLine: false, titleWeight: .medium, completeOnCheck: false,
+                     showTimeLine: false, showStatusMetadata: false,
+                     titleWeight: .medium, completeOnCheck: false,
                      onEdit: onEdit, onComplete: onComplete,
                      onAccept: onAccept, onDecline: onDecline)
     }

@@ -5,6 +5,8 @@
 
 import Foundation
 
+let appTimeZoneIdentifier = "America/Toronto"
+
 enum TokenManager {
 
     private static let suiteName = "sct_prefs"
@@ -24,9 +26,9 @@ enum TokenManager {
     /// getSharedPreferences("sct_prefs", …) did on Android.
     private static let prefs: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard
 
-    // Android called TokenManager.init(context) from MainActivity; nothing to do here,
-    // but the entry point is kept so the call site reads the same.
-    static func initialize() {}
+    static func initialize() {
+        saveUserTimeZone(appTimeZoneIdentifier)
+    }
 
     private static func string(_ key: String) -> String? { prefs.string(forKey: key) }
     private static func put(_ key: String, _ value: String) { prefs.set(value, forKey: key) }
@@ -124,5 +126,5 @@ func userTimeZone() -> TimeZone {
        let zone = TimeZone(identifier: tz) {
         return zone
     }
-    return .current
+    return TimeZone(identifier: appTimeZoneIdentifier) ?? .current
 }

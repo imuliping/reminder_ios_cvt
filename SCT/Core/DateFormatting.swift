@@ -18,19 +18,28 @@ private func formatter(_ pattern: String) -> DateFormatter {
 }
 
 func parseChatDate(_ datetimeStr: String) -> Date? {
-    let patterns = [
-        "yyyy-MM-dd'T'HH:mm:ss",
-        "yyyy-MM-dd'T'HH:mm",
-        "EEE MMM dd HH:mm:ss zzz yyyy"
-    ]
-    for pattern in patterns {
-        if let date = formatter(pattern).date(from: datetimeStr) { return date }
+    if datetimeStr.count == 10 {
+        return formatter("yyyy-MM-dd").date(from: datetimeStr)
     }
 
-    // The backend sometimes appends fractional seconds / offsets; retry on the
-    // leading 19 characters, which is what Android's `take(19)` relied on.
-    if datetimeStr.count > 19 {
-        return formatter("yyyy-MM-dd'T'HH:mm:ss").date(from: datetimeStr.take(19))
+    let normalized = datetimeStr.replacingOccurrences(
+        of: #"\.(\d{3})\d+"#,
+        with: ".$1",
+        options: .regularExpression
+    )
+    let iso = ISO8601DateFormatter()
+    iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = iso.date(from: normalized) { return date }
+    iso.formatOptions = [.withInternetDateTime]
+    if let date = iso.date(from: normalized) { return date }
+
+    for pattern in ["yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss",
+                    "yyyy-MM-dd'T'HH:mm", "EEE MMM dd HH:mm:ss zzz yyyy"] {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = pattern
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        if let date = f.date(from: normalized) { return date }
     }
     return nil
 }
@@ -116,15 +125,19 @@ func todayString() -> String {
     let f = DateFormatter()
     f.locale = Locale.current
     f.dateFormat = "yyyy-MM-dd"
+    f.timeZone = userTimeZone()
     return f.string(from: Date())
 }
 
 /// `Calendar.getInstance().add(DAY_OF_YEAR, offset)` then format as yyyy-MM-dd.
 func dayOffsetString(_ offset: Int) -> String {
-    let date = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
+    var calendar = Calendar.current
+    calendar.timeZone = userTimeZone()
+    let date = calendar.date(byAdding: .day, value: offset, to: Date()) ?? Date()
     let f = DateFormatter()
     f.locale = Locale.current
     f.dateFormat = "yyyy-MM-dd"
+    f.timeZone = userTimeZone()
     return f.string(from: date)
 }
 
@@ -133,7 +146,46 @@ func nowDatetimeString() -> String {
     let f = DateFormatter()
     f.locale = Locale.current
     f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+    f.timeZone = userTimeZone()
     return f.string(from: Date())
+}
+
+/// Builds a one-hour reminder window from an America/Toronto editor value.
+/// The offset is included so the backend receives an unambiguous instant.
+func quickTaskWindow(hour: String, minute: String, date: String? = nil) -> (String, String)? {
+    guard let h = Int(hour), (0...23).contains(h),
+          let m = Int(minute), (0...59).contains(m) else { return nil }
+
+    let day: String
+    if let date, date.count == 10 {
+        day = date
+    } else if let date, let instant = parseChatDate(date) {
+        day = formatter("yyyy-MM-dd").string(from: instant)
+    } else {
+        day = todayString()
+    }
+
+    let local = DateFormatter()
+    local.locale = Locale(identifier: "en_US_POSIX")
+    local.calendar = Calendar(identifier: .gregorian)
+    local.timeZone = userTimeZone()
+    local.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+    local.isLenient = false
+    guard let start = local.date(from:
+        "\(day)T\(String(h).padStart(2, "0")):\(String(m).padStart(2, "0")):00") else {
+        return nil
+    }
+
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = userTimeZone()
+    guard let end = calendar.date(byAdding: .hour, value: 1, to: start) else { return nil }
+
+    let output = DateFormatter()
+    output.locale = Locale(identifier: "en_US_POSIX")
+    output.calendar = calendar
+    output.timeZone = userTimeZone()
+    output.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXX"
+    return (output.string(from: start), output.string(from: end))
 }
 
 /// Parses an ISO-ish timestamp to epoch millis; used for the "updated within a day"
@@ -143,6 +195,7 @@ func parseTimestampMillis(_ raw: String?) -> Double? {
     let f = DateFormatter()
     f.locale = Locale.current
     f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+    f.timeZone = TimeZone(secondsFromGMT: 0)
     guard let d = f.date(from: raw.take(19)) else { return nil }
     return d.timeIntervalSince1970 * 1000
 }

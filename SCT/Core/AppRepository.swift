@@ -189,7 +189,7 @@ enum AppRepository {
         let seniorId = TokenManager.isSenior()
             ? (TokenManager.getUserId() ?? "")
             : (TokenManager.getSeniorUserId() ?? "")
-        let timeZone = TokenManager.getUserTimeZone() ?? TimeZone.current.identifier
+        let timeZone = TokenManager.getUserTimeZone() ?? appTimeZoneIdentifier
         let result = await safeCall {
             try await api.getMyDay(date: today, seniorId: seniorId, timezone: timeZone)
         }
@@ -629,7 +629,7 @@ enum AppRepository {
                     repeatTypeId: repeatTypeName.lowercased(),
                     repeatEvery: repeatEvery,
                     timeOfDay: timeOfDayFromDatetime(startDatetime),
-                    timezone: TokenManager.getUserTimeZone() ?? TimeZone.current.identifier,
+                    timezone: TokenManager.getUserTimeZone() ?? appTimeZoneIdentifier,
                     isActive: true
                 ),
                 recurrencePatterns: patterns,
@@ -666,7 +666,7 @@ enum AppRepository {
                     repeatTypeId: repeatTypeName.lowercased(),
                     repeatEvery: repeatEvery,
                     timeOfDay: timeOfDayFromDatetime(startDatetime),
-                    timezone: TokenManager.getUserTimeZone() ?? TimeZone.current.identifier,
+                    timezone: TokenManager.getUserTimeZone() ?? appTimeZoneIdentifier,
                     isActive: true
                 ),
                 recurrencePatterns: patterns,
@@ -680,8 +680,11 @@ enum AppRepository {
         let f = DateFormatter()
         f.locale = Locale.current
         f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        f.timeZone = userTimeZone()
         guard let date = f.date(from: startDatetime.take(19)) else { return nil }
-        switch Calendar.current.component(.weekday, from: date) {
+        var calendar = Calendar.current
+        calendar.timeZone = userTimeZone()
+        switch calendar.component(.weekday, from: date) {
         case 1:  return "SUN"
         case 2:  return "MON"
         case 3:  return "TUE"

@@ -50,11 +50,10 @@ final class MyDayViewModel: ObservableObject {
                          labelId: String, priorityId: String,
                          selectedWeekdays: [String]? = nil) {
         Task {
-            let today = todayString()
-            let h = Int(hour) ?? 0
-            let m = Int(minute) ?? 0
-            let startDt = "\(today)T\(String(h).padStart(2, "0")):\(String(m).padStart(2, "0")):00"
-            let endDt   = "\(today)T\(String(min(h + 1, 23)).padStart(2, "0")):\(String(m).padStart(2, "0")):00"
+            guard let (startDt, endDt) = quickTaskWindow(hour: hour, minute: minute) else {
+                tasksState = .error("Enter a valid reminder time.")
+                return
+            }
             let result = if let repeatTypeName {
                 await AppRepository.createTaskWithRecurrence(
                     title: title, description: description.nonBlank,
@@ -86,11 +85,12 @@ final class MyDayViewModel: ObservableObject {
                          labelId: String, priorityId: String,
                          selectedWeekdays: [String]? = nil) {
         Task {
-            let today = originalDate?.take(10) ?? todayString()
-            let h = Int(hour) ?? 0
-            let m = Int(minute) ?? 0
-            let startDt = "\(today)T\(String(h).padStart(2, "0")):\(String(m).padStart(2, "0")):00"
-            let endDt   = "\(today)T\(String(min(h + 1, 23)).padStart(2, "0")):\(String(m).padStart(2, "0")):00"
+            guard let (startDt, endDt) = quickTaskWindow(
+                hour: hour, minute: minute, date: originalDate
+            ) else {
+                tasksState = .error("Enter a valid reminder time.")
+                return
+            }
             let result = if let repeatTypeName {
                 await AppRepository.updateTaskWithRecurrence(
                     taskId: taskId, title: title, description: description.nonBlank,

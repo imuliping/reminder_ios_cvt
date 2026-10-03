@@ -104,6 +104,9 @@ struct SeniorHomeView: View {
                                 Text("How can I help\nyou?")
                                     .font(appFont(15, .bold))
                                     .foregroundStyle(TextDark)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: true, vertical: true)
+                                    .multilineTextAlignment(.leading)
                                     .padding(10)
                                     .background(Color(hex: 0xEEEEEE))
                                     .clipShape(UnevenRoundedRectangle(
@@ -114,7 +117,7 @@ struct SeniorHomeView: View {
                                     .font(appFont(14))
                                     .foregroundStyle(TextGray)
                             }
-                            Spacer()
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             EldaAvatar(size: 80)
                         }
                         .padding(16)

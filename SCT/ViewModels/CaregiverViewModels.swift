@@ -97,13 +97,17 @@ final class CaregiverAvailableTimeViewModel: ObservableObject {
         let apiFmt = DateFormatter()
         apiFmt.locale = Locale.current
         apiFmt.dateFormat = "yyyy-MM-dd"
+        apiFmt.timeZone = userTimeZone()
         let displayFmt = DateFormatter()
         displayFmt.locale = Locale.current
         displayFmt.dateFormat = "EEE, MMM d"
+        displayFmt.timeZone = userTimeZone()
 
+        var calendar = Calendar.current
+        calendar.timeZone = userTimeZone()
         let days: [DayOption] = (0...6).compactMap { offset in
-            guard let date = Calendar.current.date(byAdding: .day, value: offset, to: Date()) else { return nil }
-            let dayNum = Calendar.current.component(.day, from: date)
+            guard let date = calendar.date(byAdding: .day, value: offset, to: Date()) else { return nil }
+            let dayNum = calendar.component(.day, from: date)
             let suffix: String
             switch true {
             case dayNum % 10 == 1 && dayNum != 11: suffix = "st"

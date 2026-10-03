@@ -81,6 +81,152 @@ private func buildDatetimes(year: String, month: String, day: String,
     return (startDt, endDt)
 }
 
+struct TaskStatusControls: View {
+    let task: TaskItem
+    let onChanged: () -> Void
+
+    @State private var status: String?
+    @State private var hiddenFromFamily: Bool
+    @State private var busy = false
+    @State private var errorMessage: String?
+    @State private var showSkipConfirm = false
+
+    init(task: TaskItem, onChanged: @escaping () -> Void) {
+        self.task = task
+        self.onChanged = onChanged
+        _status = State(initialValue: task.status ?? task.taskStatusId)
+        _hiddenFromFamily = State(initialValue: task.hiddenFromFamily == true)
+    }
+
+    private var statusText: String {
+        switch status?.lowercased() {
+        case "completed", "done": return "Completed"
+        case "skipped": return "Skipped"
+        case "missed": return "Missed"
+        case "canceled", "cancelled": return "Canceled"
+        case "started", "in_progress": return "In progress"
+        default: return task.isOverdue ? "Overdue" : "Scheduled"
+        }
+    }
+
+    private var canChangeStatus: Bool {
+        task.canComplete == true
+            && !["done", "completed", "skipped", "cancelled", "canceled"]
+                .contains(status?.lowercased() ?? "")
+    }
+
+    private var canHideFromFamily: Bool {
+        TokenManager.isSenior()
+            && (task.subjectUserId == nil || task.subjectUserId == TokenManager.getUserId())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Status: \(statusText)")
+                .font(appFont(15, .semibold))
+                .foregroundStyle(TextDark)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(appFont(13))
+                    .foregroundStyle(DangerRed)
+            }
+
+            if canHideFromFamily {
+                Toggle("Hide from family", isOn: Binding(
+                    get: { hiddenFromFamily },
+                    set: updateVisibility
+                ))
+                .font(appFont(14))
+                .tint(AppGreen)
+                .disabled(busy)
+            }
+
+            if canChangeStatus {
+                Button {
+                    changeStatus(skip: false)
+                } label: {
+                    Text("Mark completed")
+                        .font(appFont(15, .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(AppGreen)
+                        .rounded(50)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+
+                Button {
+                    showSkipConfirm = true
+                } label: {
+                    Text("Skip this task")
+                        .font(appFont(15, .semibold))
+                        .foregroundStyle(TextDark)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .roundedBorder(BorderGray, 1, radius: 50)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+
+            if busy {
+                ProgressView().tint(AppGreen).frame(maxWidth: .infinity)
+            }
+        }
+        .alert("Skip this task?", isPresented: $showSkipConfirm) {
+            Button("Skip task", role: .destructive) { changeStatus(skip: true) }
+            Button("Keep task", role: .cancel) {}
+        } message: {
+            Text("This stops reminders for this task occurrence. Future repeating tasks stay scheduled.")
+        }
+    }
+
+    private func changeStatus(skip: Bool) {
+        busy = true
+        errorMessage = nil
+        Task {
+            let result = skip
+                ? await AppRepository.skipTask(taskId: task.taskId)
+                : await AppRepository.completeTask(taskId: task.taskId)
+            await result.fold(
+                onSuccess: { _ in
+                    status = skip ? "skipped" : "done"
+                    NotificationEventBus.shared.triggerScheduleRefresh()
+                    NotificationEventBus.shared.triggerNotificationRefresh()
+                    busy = false
+                    onChanged()
+                },
+                onFailure: { error in
+                    errorMessage = error.message.isEmpty
+                        ? "Unable to change task status. Please try again."
+                        : error.message
+                    busy = false
+                }
+            )
+        }
+    }
+
+    private func updateVisibility(_ hidden: Bool) {
+        busy = true
+        errorMessage = nil
+        Task {
+            await AppRepository.setTaskFamilyVisibility(taskId: task.taskId, hidden: hidden).fold(
+                onSuccess: { _ in
+                    hiddenFromFamily = hidden
+                    NotificationEventBus.shared.triggerScheduleRefresh()
+                    busy = false
+                },
+                onFailure: { error in
+                    errorMessage = error.message.isEmpty
+                        ? "Could not update task visibility."
+                        : error.message
+                    busy = false
+                }
+            )
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────
 //  SENIOR NEW/EDIT TASK DIALOG
 // ─────────────────────────────────────────────────────────────────
@@ -147,6 +293,11 @@ struct SeniorNewTaskDialog: View {
                 }
 
                 Spacer().frame(height: 16)
+
+                if let existingTask {
+                    TaskStatusControls(task: existingTask, onChanged: onDismiss)
+                    Spacer().frame(height: 12)
+                }
 
                 SDialogField(label: "Title", required: true) { SRoundedField(text: $title) }
                 Spacer().frame(height: 12)
@@ -378,6 +529,11 @@ struct TodoTaskDialog: View {
 
                 Spacer().frame(height: 16)
 
+                if let existingTask {
+                    TaskStatusControls(task: existingTask, onChanged: onDismiss)
+                    Spacer().frame(height: 12)
+                }
+
                 SDialogField(label: "Title", required: true) { SRoundedField(text: $title) }
                 Spacer().frame(height: 12)
                 SDialogField(label: "Description") {
@@ -569,6 +725,11 @@ struct UnifiedTaskDialog: View {
                 }
 
                 Spacer().frame(height: 16)
+
+                if let existingTask {
+                    TaskStatusControls(task: existingTask, onChanged: onDismiss)
+                    Spacer().frame(height: 12)
+                }
 
                 SDialogField(label: "Title", required: true) { SRoundedField(text: $taskTitle) }
                 Spacer().frame(height: 12)
@@ -803,6 +964,11 @@ struct CaregiverTaskDialog: View {
                 }
 
                 Spacer().frame(height: 16)
+
+                if let existingTask {
+                    TaskStatusControls(task: existingTask, onChanged: onDismiss)
+                    Spacer().frame(height: 12)
+                }
 
                 SDialogField(label: "Title", required: true) { SRoundedField(text: $taskTitle) }
                 Spacer().frame(height: 12)

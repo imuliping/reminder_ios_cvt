@@ -178,6 +178,17 @@ struct NotificationCard: View {
         }
     }
 
+    private var taskDate: String? {
+        notification.taskStartDatetime?.nonBlank
+            ?? notification.taskDueDate?.nonBlank
+            ?? notification.taskEndDatetime?.nonBlank
+    }
+
+    private var hasPendingActions: Bool {
+        !["acknowledged", "success", "dismissed", "cancelled", "expired"]
+            .contains(notification.ackStatus?.lowercased() ?? "")
+    }
+
     var body: some View {
         let displayTitle = notification.displayTitle ?? ""
         let displayBody = notification.body ?? ""
@@ -203,13 +214,54 @@ struct NotificationCard: View {
 
             Spacer().frame(height: 8)
 
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Task date: \(taskDate.map(formatTaskNotificationDate) ?? "Unavailable")")
+                    .font(appFont(15))
+                    .foregroundStyle(TextDark)
+
+                if let end = notification.taskEndDatetime?.nonBlank, end != taskDate {
+                    Text("Ends: \(formatTaskNotificationDate(end))")
+                        .font(appFont(14))
+                        .foregroundStyle(TextDark)
+                }
+
+                if let status = notification.taskStatus?.nonBlank {
+                    Text("Task status: \(taskStatusLabel(status))")
+                        .font(appFont(14))
+                        .foregroundStyle(TextDark)
+                }
+
+                if let alertTime = notification.scheduledTime?.nonBlank {
+                    Text("Alert: \(formatTaskNotificationDate(alertTime))")
+                        .font(appFont(12))
+                        .foregroundStyle(TextGray)
+                }
+
+                if notification.linkedTaskId != nil && notification.isCheckIn != true {
+                    if notification.taskAvailable == false {
+                        Text("This task is no longer available. You can dismiss this alert.")
+                            .font(appFont(13))
+                            .foregroundStyle(TextGray)
+                            .lineSpacing(3)
+                    } else {
+                        Button("View task / change status", action: onViewTask)
+                            .font(appFont(14, .semibold))
+                    }
+                }
+            }
+
+            Spacer().frame(height: 8)
+
             if displayTitle.isNotEmpty {
                 Text(displayTitle).font(appFont(20, .bold))
                 Divider().padding(.vertical, 8)
             }
 
             if displayBody.isNotEmpty {
-                Text(displayBody).font(appFont(14)).foregroundStyle(TextGray)
+                Text(displayBody)
+                    .font(appFont(14))
+                    .foregroundStyle(TextGray)
+                    .lineSpacing(4)
                 Spacer().frame(height: 8)
             }
 
@@ -220,20 +272,16 @@ struct NotificationCard: View {
                 Spacer().frame(height: 8)
             }
 
-            Spacer().frame(height: 4)
-
-            if notification.linkedTaskId != nil && notification.isCheckIn != true {
-                if notification.taskAvailable == false {
-                    Text("This task is no longer available.")
-                        .font(appFont(13)).foregroundStyle(TextGray)
-                } else {
-                    Button("View task", action: onViewTask)
-                        .font(appFont(14, .semibold))
-                }
+            if let snoozedUntil = notification.snoozedUntil?.nonBlank {
+                Text("Snoozed until: \(formatNotificationTime(snoozedUntil))")
+                    .font(appFont(13))
+                    .foregroundStyle(TextGray)
                 Spacer().frame(height: 8)
             }
 
-            if !notification.acknowledged {
+            Spacer().frame(height: 4)
+
+            if hasPendingActions {
                 Button(action: onAcknowledge) {
                     ZStack {
                         if isPending {
@@ -282,18 +330,24 @@ struct NotificationCard: View {
                     Button(action: onCannotDo) {
                         Text("I cannot do this")
                             .font(appFont(13, .semibold))
-                            .foregroundStyle(DangerRed)
+                            .foregroundColor(TextDark)
                             .frame(maxWidth: .infinity, minHeight: 40)
-                            .roundedBorder(DangerRed, 1, radius: 50)
+                            .background(Color.white)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(BorderGray, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
-                    .disabled(isPending)
+                    .tint(TextDark)
+                    .opacity(isPending ? 0.5 : 1)
+                    .allowsHitTesting(!isPending)
                     Text("Keeps the task unresolved. High and critical reminders request a check-in from your selected contacts.")
                         .font(appFont(11))
                         .foregroundStyle(TextGray)
                 }
             } else {
-                Text("✓ Completed")
+                Text(notification.actionStatus?.lowercased() == "completed"
+                     ? "Completed"
+                     : taskStatusLabel(notification.ackStatus))
                     .font(appFont(15, .bold))
                     .foregroundStyle(TextGray)
                     .frame(maxWidth: .infinity)
@@ -309,6 +363,30 @@ struct NotificationCard: View {
     }
 }
 
+private func taskStatusLabel(_ status: String?) -> String {
+    switch status?.lowercased() {
+    case "done", "completed", "complete": return "Completed"
+    case "skipped": return "Skipped"
+    case "cancelled", "canceled": return "Cancelled"
+    case "in_progress", "started": return "In progress"
+    case nil, "", "pending", "scheduled", "not_started": return "Scheduled"
+    default:
+        return status?
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalizedFirst ?? "Scheduled"
+    }
+}
+
+private func formatTaskNotificationDate(_ raw: String) -> String {
+    if raw.count == 10 { return raw }
+    guard let date = parseChatDate(raw) else { return raw }
+    let formatter = DateFormatter()
+    formatter.locale = .current
+    formatter.timeZone = userTimeZone()
+    formatter.dateFormat = "EEE, MMM d, yyyy 'at' h:mm a"
+    return formatter.string(from: date)
+}
+
 private struct NotificationTaskSheet: View {
     let taskId: String
     let onDismiss: () -> Void
@@ -316,41 +394,89 @@ private struct NotificationTaskSheet: View {
     @State private var errorMessage: String?
     @State private var busy = false
     @State private var hiddenFromFamily = false
+    @State private var showSkipConfirm = false
 
     var body: some View {
         NavigationStack {
             Group {
                 if let task {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(task.displayName).font(appFont(22, .bold))
+                        VStack(alignment: .leading, spacing: 12) {
+                            if let errorMessage {
+                                Text(errorMessage)
+                                    .font(appFont(13))
+                                    .foregroundStyle(DangerRed)
+                            }
+
+                            Text("Scheduled: \(task.startDatetime.map(formatTaskNotificationDate) ?? "Unavailable")")
+                                .font(appFont(15))
+                                .foregroundStyle(TextDark)
+
+                            if let end = task.endDatetime?.nonBlank {
+                                Text("Ends: \(formatTaskNotificationDate(end))")
+                                    .font(appFont(15))
+                                    .foregroundStyle(TextDark)
+                            }
+
                             if let description = task.description?.nonBlank {
-                                Text(description).font(appFont(15)).foregroundStyle(TextGray)
+                                Text(description)
+                                    .font(appFont(15))
+                                    .foregroundStyle(TextDark)
                             }
-                            Text("Status: \(task.statusText)").font(appFont(15, .semibold))
-                            if let date = task.startDatetime {
-                                Text(formatNotificationTime(date)).font(appFont(14))
+
+                            if let location = task.location?.nonBlank {
+                                Text("Location: \(location)")
+                                    .font(appFont(15))
+                                    .foregroundStyle(TextDark)
                             }
+
+                            Divider().padding(.vertical, 2)
+
+                            Text("Status: \(task.statusText)")
+                                .font(appFont(15, .semibold))
+                                .foregroundStyle(TextDark)
+
                             if TokenManager.isSenior() &&
                                 (task.subjectUserId == nil || task.subjectUserId == TokenManager.getUserId()) {
                                 Toggle("Hide from family", isOn: Binding(
                                     get: { hiddenFromFamily },
                                     set: { updateVisibility($0) }))
+                                    .font(appFont(14))
+                                    .tint(AppGreen)
                                     .disabled(busy)
                             }
+
                             if task.canComplete == true &&
                                 !["done", "completed", "skipped", "cancelled", "canceled"]
                                     .contains((task.status ?? task.taskStatusId ?? "").lowercased()) {
-                                Button("Mark completed") { updateStatus(skip: false) }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(AppGreen)
-                                    .disabled(busy)
-                                Button("Skip this task") { updateStatus(skip: true) }
-                                    .buttonStyle(.bordered)
-                                    .disabled(busy)
+                                Button {
+                                    updateStatus(skip: false)
+                                } label: {
+                                    Text("Mark completed")
+                                        .font(appFont(15, .semibold))
+                                        .foregroundStyle(.white)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .background(AppGreen)
+                                        .rounded(50)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(busy)
+
+                                Button {
+                                    showSkipConfirm = true
+                                } label: {
+                                    Text("Skip this task")
+                                        .font(appFont(15, .semibold))
+                                        .foregroundStyle(TextDark)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .roundedBorder(BorderGray, 1, radius: 50)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(busy)
                             }
-                            if let errorMessage {
-                                Text(errorMessage).font(appFont(13)).foregroundStyle(DangerRed)
+
+                            if busy {
+                                ProgressView().tint(AppGreen).frame(maxWidth: .infinity)
                             }
                         }
                         .padding(20)
@@ -361,12 +487,29 @@ private struct NotificationTaskSheet: View {
                     ProgressView("Loading task...")
                 }
             }
-            .navigationTitle("Reminder")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", action: onDismiss)
+            .navigationTitle(task?.displayName ?? "Task details")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack {
+                        Spacer()
+                        Button("Close", action: onDismiss)
+                            .font(appFont(16, .semibold))
+                            .foregroundStyle(AppGreen)
+                            .padding(.horizontal, 20)
+                            .frame(minHeight: 50)
+                    }
+                    .background(Color.white)
                 }
             }
+        }
+        .presentationDetents([.medium, .large])
+        .alert("Skip this task?", isPresented: $showSkipConfirm) {
+            Button("Skip task", role: .destructive) { updateStatus(skip: true) }
+            Button("Keep task", role: .cancel) {}
+        } message: {
+            Text("This stops reminders for this task occurrence. Future repeating tasks stay scheduled.")
         }
         .task { load() }
     }
@@ -374,12 +517,15 @@ private struct NotificationTaskSheet: View {
     private func load() {
         guard !taskId.isBlank else { return }
         Task {
+            errorMessage = nil
             await AppRepository.getTask(taskId: taskId).fold(
                 onSuccess: {
                     task = $0
                     hiddenFromFamily = $0.hiddenFromFamily == true
                 },
-                onFailure: { errorMessage = $0.message })
+                onFailure: {
+                    errorMessage = "Unable to open this task: \($0.message). You can still dismiss its notification."
+                })
         }
     }
 
@@ -390,9 +536,11 @@ private struct NotificationTaskSheet: View {
                 ? await AppRepository.skipTask(taskId: taskId)
                 : await AppRepository.completeTask(taskId: taskId)
             await result.fold(
-                onSuccess: { _ in
+                onSuccess: { updated in
+                    task = updated
                     NotificationEventBus.shared.triggerScheduleRefresh()
-                    onDismiss()
+                    NotificationEventBus.shared.triggerNotificationRefresh()
+                    errorMessage = nil
                 },
                 onFailure: { errorMessage = $0.message })
             busy = false
@@ -403,7 +551,8 @@ private struct NotificationTaskSheet: View {
         busy = true
         Task {
             await AppRepository.setTaskFamilyVisibility(taskId: taskId, hidden: hidden)
-                .onSuccess { _ in
+                .onSuccess { updated in
+                    task = updated
                     hiddenFromFamily = hidden
                     NotificationEventBus.shared.triggerScheduleRefresh()
                 }

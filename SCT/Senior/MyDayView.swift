@@ -201,8 +201,19 @@ struct MyDayTaskRow: View {
                         Text(name)
                             .font(appFont(15, .bold))
                             .foregroundStyle(isSkipped ? TextGray : TextDark)
+                        Text(task.statusText)
+                            .font(appFont(12))
+                            .foregroundStyle(isOverdue ? Color(hex: 0xC62828) : TextGray)
+                        if (task.priorityLevel ?? 0) >= 4 {
+                            Text("High priority")
+                                .font(appFont(12, .bold))
+                                .foregroundStyle(Color(hex: 0xC62828))
+                        }
                         if let description {
-                            Text(description).font(appFont(13)).foregroundStyle(TextGray)
+                            Text(description)
+                                .font(appFont(13))
+                                .foregroundStyle(TextGray)
+                                .lineSpacing(5)
                         }
                         if let location = task.location, location.isNotBlank {
                             Text(location).font(appFont(12)).foregroundStyle(TextGray)
@@ -278,7 +289,7 @@ struct MyDayTaskDialog: View {
 
     @State private var title = ""
     @State private var description = ""
-    @State private var remindHour = "00"
+    @State private var remindHour = "09"
     @State private var remindMin = "00"
     @State private var errorMsg = ""
     @State private var selectedRepeat = "Never"
@@ -305,16 +316,14 @@ struct MyDayTaskDialog: View {
                     .font(appFont(18, .bold))
                     .frame(maxWidth: .infinity, alignment: .center)
 
+                if let existingTask {
+                    TaskStatusControls(task: existingTask, onChanged: onDismiss)
+                }
+
                 Spacer().frame(height: 20)
 
                 SDialogField(label: "Title", required: true) {
                     SRoundedField(text: $title)
-                }
-
-                Spacer().frame(height: 16)
-
-                SDialogField(label: "Description") {
-                    SRoundedField(text: $description, singleLine: false, minLines: 4, maxLines: 6)
                 }
 
                 Spacer().frame(height: 16)
@@ -345,6 +354,12 @@ struct MyDayTaskDialog: View {
 
                 Spacer().frame(height: 16)
 
+                SDialogField(label: "Description") {
+                    SRoundedField(text: $description, singleLine: false, minLines: 4, maxLines: 6)
+                }
+
+                Spacer().frame(height: 16)
+
                 HStack(spacing: 0) {
                     Text("Remind me at").font(appFont(15, .bold))
                     Text("*").font(appFont(15)).foregroundStyle(DangerRed)
@@ -353,6 +368,19 @@ struct MyDayTaskDialog: View {
                     STimeBox(value: $remindHour, placeholder: "HH")
                     Text(" : ").font(appFont(16, .bold)).foregroundStyle(TextDark)
                     STimeBox(value: $remindMin, placeholder: "MM")
+                }
+
+                Spacer().frame(height: 16)
+
+                HStack(spacing: 0) {
+                    Text("Repeat:").font(appFont(15, .bold)).frame(width: 90, alignment: .leading)
+                    Menu {
+                        ForEach(repeatOptions, id: \.self) { option in
+                            Button(option) { selectedRepeat = option }
+                        }
+                    } label: {
+                        PillMenuLabel(text: selectedRepeat)
+                    }
                 }
 
                 Spacer().frame(height: 16)
@@ -378,19 +406,6 @@ struct MyDayTaskDialog: View {
                     }
                     Spacer().frame(height: 16)
                 }
-
-                HStack(spacing: 0) {
-                    Text("Repeat:").font(appFont(15, .bold)).frame(width: 90, alignment: .leading)
-                    Menu {
-                        ForEach(repeatOptions, id: \.self) { option in
-                            Button(option) { selectedRepeat = option }
-                        }
-                    } label: {
-                        PillMenuLabel(text: selectedRepeat)
-                    }
-                }
-
-                Spacer().frame(height: 16)
 
                 HStack(spacing: 0) {
                     Text("Assign to:").font(appFont(15, .bold)).frame(width: 90, alignment: .leading)
@@ -419,6 +434,11 @@ struct MyDayTaskDialog: View {
                 SaveCancelRow(
                     onSave: {
                         if title.isBlank { errorMsg = "Title is required."; return }
+                        guard let hour = Int(remindHour), (0...23).contains(hour),
+                              let minute = Int(remindMin), (0...59).contains(minute) else {
+                            errorMsg = "Enter a valid time (00–23 hours, 00–59 minutes)."
+                            return
+                        }
                         guard let labelId = selectedLabel?.labelId, !labelId.isBlank,
                               let priorityId = selectedPriority?.priorityLevelId else {
                             errorMsg = "Choose a label and priority."; return
@@ -452,12 +472,22 @@ struct MyDayTaskDialog: View {
             guard !didInit else { return }
             didInit = true
             if let existingTask {
+                selectedRepeat = "Keep current repeat"
                 title = existingTask.displayName == "Untitled" ? "" : existingTask.displayName
                 description = existingTask.description ?? ""
-                let timePart = existingTask.startDatetime?.split(separator: "T").dropFirst().first
-                let comps = timePart?.split(separator: ":").map(String.init) ?? []
-                remindHour = comps.count > 0 ? comps[0] : "00"
-                remindMin = comps.count > 1 ? comps[1] : "00"
+                if let raw = existingTask.startDatetime,
+                   let instant = parseChatDate(raw) {
+                    let hourFormatter = DateFormatter()
+                    hourFormatter.locale = Locale(identifier: "en_US_POSIX")
+                    hourFormatter.timeZone = userTimeZone()
+                    hourFormatter.dateFormat = "HH"
+                    let minuteFormatter = DateFormatter()
+                    minuteFormatter.locale = Locale(identifier: "en_US_POSIX")
+                    minuteFormatter.timeZone = userTimeZone()
+                    minuteFormatter.dateFormat = "mm"
+                    remindHour = hourFormatter.string(from: instant)
+                    remindMin = minuteFormatter.string(from: instant)
+                }
                 selectedLabel = labels.first { $0.labelId == existingTask.labelId }
                 selectedPriority = priorityLevels.first { $0.priorityLevelId == existingTask.priorityLevelId }
             }

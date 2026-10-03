@@ -58,12 +58,16 @@ struct ReportHeader: View {
         let inFmt = DateFormatter()
         inFmt.locale = Locale.current
         inFmt.dateFormat = "yyyy-MM-dd"
+        inFmt.timeZone = userTimeZone()
         let displayFmt = DateFormatter()
         displayFmt.locale = Locale.current
         displayFmt.dateFormat = "yyyy/MM/dd"
+        displayFmt.timeZone = userTimeZone()
 
         let start = inFmt.date(from: weekStart) ?? Date()
-        let end = Calendar.current.date(byAdding: .day, value: 6, to: start) ?? start
+        var calendar = Calendar.current
+        calendar.timeZone = userTimeZone()
+        let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
         return "\(displayFmt.string(from: start)) – \(displayFmt.string(from: end))"
     }
 

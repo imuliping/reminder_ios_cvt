@@ -13,7 +13,6 @@ struct ShoppingListView: View {
     @StateObject private var vm = ShoppingListViewModel()
 
     @State private var showAddDialog = false
-    @State private var showEditDialog = false
     @State private var showDeleteConfirm = false
     @State private var editingTask: TaskItem?
 
@@ -83,7 +82,6 @@ struct ShoppingListView: View {
         .alert("Delete Item?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
                 guard let taskId = editingTask?.taskId else { return }
-                showEditDialog = false
                 editingTask = nil
                 vm.deleteItem(taskId: taskId)
             }
@@ -103,27 +101,24 @@ struct ShoppingListView: View {
                 }
             )
         }
-        .sheet(isPresented: $showEditDialog) {
-            if let taskSnapshot = editingTask {
-                ShoppingItemDialog(
-                    title: "Edit Item",
-                    existingName: taskSnapshot.displayName,
-                    existingDetail: taskSnapshot.description ?? "",
-                    existingLocation: taskSnapshot.location ?? "",
-                    existingDueDate: taskSnapshot.startDatetime?.take(10) ?? "",
-                    canAssign: canAssign,
-                    showDelete: true,
-                    onDismiss: { showEditDialog = false; editingTask = nil },
-                    onSave: { name, quantity, detail, location, dueDate, assignTo in
-                        vm.editItem(taskId: taskSnapshot.taskId, name: name, quantity: quantity,
-                                    description: detail, location: location,
-                                    dueDate: dueDate, assignToUserId: assignTo)
-                        showEditDialog = false
-                        editingTask = nil
-                    },
-                    onDelete: { showDeleteConfirm = true }   // triggers the screen-level confirm
-                )
-            }
+        .sheet(item: $editingTask) { taskSnapshot in
+            ShoppingItemDialog(
+                title: "Edit Item",
+                existingName: taskSnapshot.displayName,
+                existingDetail: taskSnapshot.description ?? "",
+                existingLocation: taskSnapshot.location ?? "",
+                existingDueDate: taskSnapshot.startDatetime?.take(10) ?? "",
+                canAssign: canAssign,
+                showDelete: true,
+                onDismiss: { editingTask = nil },
+                onSave: { name, quantity, detail, location, dueDate, assignTo in
+                    vm.editItem(taskId: taskSnapshot.taskId, name: name, quantity: quantity,
+                                description: detail, location: location,
+                                dueDate: dueDate, assignToUserId: assignTo)
+                    editingTask = nil
+                },
+                onDelete: { showDeleteConfirm = true }
+            )
         }
     }
 
@@ -171,7 +166,7 @@ struct ShoppingListView: View {
                                 isAssignedToMe: offer?.toUserId == TokenManager.getUserId(),
                                 onChecked: { vm.toggleBought(taskId: task.taskId) },
                                 onTap: {
-                                    if canAssign { editingTask = task; showEditDialog = true }
+                                    if canAssign { editingTask = task }
                                 },
                                 onAccept: { if let id = offer?.offerId { vm.acceptOffer(offerId: id) } },
                                 onDecline: { if let id = offer?.offerId { vm.declineOffer(offerId: id) } }

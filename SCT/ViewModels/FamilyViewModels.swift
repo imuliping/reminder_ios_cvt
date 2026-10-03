@@ -507,20 +507,25 @@ final class ReportViewModel: ObservableObject {
         let f = DateFormatter()
         f.locale = Locale.current
         f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = userTimeZone()
         let current = f.date(from: selectedWeekStart) ?? Date()
-        let shifted = Calendar.current.date(byAdding: .day, value: days, to: current) ?? current
+        var calendar = Calendar.current
+        calendar.timeZone = userTimeZone()
+        let shifted = calendar.date(byAdding: .day, value: days, to: current) ?? current
         selectedWeekStart = f.string(from: shifted)
         loadReport()
     }
 
     private static func thisMonday() -> String {
         var cal = Calendar.current
+        cal.timeZone = userTimeZone()
         cal.firstWeekday = 2  // Monday, matching Calendar.MONDAY on Android
         let now = Date()
         let start = cal.dateInterval(of: .weekOfYear, for: now)?.start ?? now
         let f = DateFormatter()
         f.locale = Locale.current
         f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = userTimeZone()
         return f.string(from: start)
     }
 }

@@ -22,6 +22,7 @@ struct SCTApp: App {
     var body: some Scene {
         WindowGroup {
             AppNavigator()
+                .lineSpacing(5)
         }
     }
 }
